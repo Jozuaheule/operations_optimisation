@@ -252,7 +252,7 @@ def build_2echelon_vrp_model(data):
         )
 
     # (3) Capacity constraints for 1st level (using flow variables)
-    total_demand = sum(demands)
+    # Note: total_demand = sum(demands) could be used for validation
     for i in range(n_satellites + 1):
         for j in range(n_satellites + 1):
             if i != j:
