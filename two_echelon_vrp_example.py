@@ -13,15 +13,25 @@ Problem Description:
 - Objective: Minimize total transportation cost
 - Constraints: Vehicle capacities, satellite capacities
 """
-
+import re
 import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
 import matplotlib.pyplot as plt
+from data_processer import parse_file
 
 # ============================================================================
 # PROBLEM DATA SETUP
 # ============================================================================
+
+# Specify if sample or not
+sample = False
+
+# Specify folder to use for verification
+folder = "/Users/m.j.j.heule/Documents/4. TU Delft/TU Master/Operations optimisation/operations_optimisation/folder verification"
+dataset = 4   # datasets 2,3 have same structure, dataset 4 is a bit different, dataset 1 works with matrix
+filepath = "/Users/m.j.j.heule/Documents/4. TU Delft/TU Master/Operations optimisation/operations_optimisation/Dataset2_example.dat"
+
 
 def create_sample_problem():
     """
@@ -30,57 +40,55 @@ def create_sample_problem():
     Returns:
         dict: Problem data including coordinates, demands, capacities, etc.
     """
+    if sample:
+        # Define coordinates for depot, satellites, and customers
+        # Depot is at origin (0, 0)
+        depot = np.array([0, 0])
 
-    # Define coordinates for depot, satellites, and customers
-    # Depot is at origin (0, 0)
-    depot = np.array([0, 0])
+        # Satellites are positioned around the customer area
+        # In practice, these would be strategically located facilities
+        satellites = np.array([
+            [20, 20],   # Satellite 0
+            [20, -20]   # Satellite 1
+        ])
 
-    # Satellites are positioned around the customer area
-    # In practice, these would be strategically located facilities
-    satellites = np.array([
-        [20, 20],   # Satellite 0
-        [20, -20]   # Satellite 1
-    ])
+        # Customers are distributed in clusters
+        # Each cluster is roughly near one satellite
+        customers = np.array([
+            [25, 25],   # Customer 0 (near satellite 0)
+            [22, 18],   # Customer 1 (near satellite 0)
+            [18, 22],   # Customer 2 (near satellite 0)
+            [15, 15],   # Customer 3 (between satellites)
+            [25, -25],  # Customer 4 (near satellite 1)
+            [22, -18],  # Customer 5 (near satellite 1)
+            [18, -22],  # Customer 6 (near satellite 1)
+            [15, -15]   # Customer 7 (between satellites)
+        ])
 
-    # Customers are distributed in clusters
-    # Each cluster is roughly near one satellite
-    customers = np.array([
-        [25, 25],   # Customer 0 (near satellite 0)
-        [22, 18],   # Customer 1 (near satellite 0)
-        [18, 22],   # Customer 2 (near satellite 0)
-        [15, 15],   # Customer 3 (between satellites)
-        [25, -25],  # Customer 4 (near satellite 1)
-        [22, -18],  # Customer 5 (near satellite 1)
-        [18, -22],  # Customer 6 (near satellite 1)
-        [15, -15]   # Customer 7 (between satellites)
-    ])
+        # Customer demands (amount of goods each customer requires)
+        cust_demands = np.array([10, 8, 12, 7, 11, 9, 10, 6])
 
-    # Customer demands (amount of goods each customer requires)
-    demands = np.array([10, 8, 12, 7, 11, 9, 10, 6])
+        # Vehicle capacities
+        # 1st level vehicles are larger (e.g., trucks)
+        capacity_1st_level = 50
+        # 2nd level vehicles are smaller (e.g., vans for city delivery)
+        capacity_2nd_level = 20
 
-    # Vehicle capacities
-    # 1st level vehicles are larger (e.g., trucks)
-    capacity_1st_level = 50
-    # 2nd level vehicles are smaller (e.g., vans for city delivery)
-    capacity_2nd_level = 20
+        # Number of available vehicles
+        num_vehicles_1st = 2  # Vehicles at depot
+        num_vehicles_2nd = 4  # Total vehicles for 2nd level distribution
 
-    # Number of available vehicles
-    num_vehicles_1st = 2  # Vehicles at depot
-    num_vehicles_2nd = 4  # Total vehicles for 2nd level distribution
+        # Satellite capacity (max number of 2nd-level routes from each satellite)
+        satellite_capacity = 3  # Each satellite can handle up to 3 delivery routes
 
-    # Satellite capacity (max number of 2nd-level routes from each satellite)
-    satellite_capacity = 3  # Each satellite can handle up to 3 delivery routes
+        def euclidean_distance(p1, p2):
+            return np.sqrt(np.sum((p1 - p2) ** 2))
 
-    # Calculate distance matrix using Euclidean distance
-    # This represents travel costs (simplified as distances)
-    def euclidean_distance(p1, p2):
-        return np.sqrt(np.sum((p1 - p2) ** 2))
-
-    return {
+        return {
         'depot': depot,
         'satellites': satellites,
         'customers': customers,
-        'demands': demands,
+        'demands': cust_demands,
         'capacity_1st': capacity_1st_level,
         'capacity_2nd': capacity_2nd_level,
         'num_vehicles_1st': num_vehicles_1st,
@@ -88,6 +96,15 @@ def create_sample_problem():
         'satellite_capacity': satellite_capacity,
         'distance_func': euclidean_distance
     }
+
+    else:
+
+        data = parse_file(filepath)
+        return data
+
+    
+    # Calculate distance matrix using Euclidean distance
+    # This represents travel costs (simplified as distances)
 
 
 # ============================================================================
@@ -147,14 +164,14 @@ def build_2echelon_vrp_model(data):
     for k in range(n_satellites):
         # Arcs from satellite k to customers
         for j in range(n_customers):
-            y[k, k, j] = model.addVar(vtype=GRB.BINARY, name=f"y_{k}_{k}_{j}")
+            y[k, 'S', j] = model.addVar(vtype=GRB.BINARY, name=f"y_{k}_{k}_{j}")
         # Arcs between customers (for routes starting from satellite k)
         for i in range(n_customers):
             for j in range(n_customers):
                 if i != j:
                     y[k, i, j] = model.addVar(vtype=GRB.BINARY, name=f"y_{k}_{i}_{j}")
             # Arcs from customers back to satellite k
-            y[k, i, k] = model.addVar(vtype=GRB.BINARY, name=f"y_{k}_{i}_{k}")
+            y[k, i, 'S'] = model.addVar(vtype=GRB.BINARY, name=f"y_{k}_{i}_{k}")
 
     # --- Assignment Variables ---
     # z[k,j] = 1 if customer j is served by satellite k
@@ -176,12 +193,12 @@ def build_2echelon_vrp_model(data):
     Q2 = {}
     for k in range(n_satellites):
         for j in range(n_customers):
-            Q2[k, k, j] = model.addVar(vtype=GRB.CONTINUOUS, name=f"Q2_{k}_{k}_{j}")
+            Q2[k, 'S', j] = model.addVar(vtype=GRB.CONTINUOUS, name=f"Q2_{k}_{k}_{j}")
         for i in range(n_customers):
             for j in range(n_customers):
                 if i != j:
                     Q2[k, i, j] = model.addVar(vtype=GRB.CONTINUOUS, name=f"Q2_{k}_{i}_{j}")
-            Q2[k, i, k] = model.addVar(vtype=GRB.CONTINUOUS, name=f"Q2_{k}_{i}_{k}")
+            Q2[k, i, 'S'] = model.addVar(vtype=GRB.CONTINUOUS, name=f"Q2_{k}_{i}_{k}")
 
     model.update()
 
@@ -216,7 +233,7 @@ def build_2echelon_vrp_model(data):
         # Satellite to customer
         for j in range(n_customers):
             cost = dist_func(sat_pos, customers[j])
-            obj += cost * y[k, k, j]
+            obj += cost * y[k, 'S', j]
 
         # Customer to customer
         for i in range(n_customers):
@@ -227,7 +244,7 @@ def build_2echelon_vrp_model(data):
 
             # Customer back to satellite
             cost = dist_func(customers[i], sat_pos)
-            obj += cost * y[k, i, k]
+            obj += cost * y[k, i, 'S']
 
     model.setObjective(obj, GRB.MINIMIZE)
 
@@ -270,23 +287,23 @@ def build_2echelon_vrp_model(data):
     # (5) Flow conservation at customers for each satellite
     for k in range(n_satellites):
         for j in range(n_customers):
-            # Inflow = Outflow for each customer in routes from satellite k
-            model.addConstr(
-                gp.quicksum(y[k, i, j] for i in range(n_customers) if i != j) + y[k, k, j] ==
-                gp.quicksum(y[k, j, i] for i in range(n_customers) if i != j) + y[k, j, k],
-                name=f"customer_flow_{k}_{j}"
-            )
+            # Inflow: From other customers OR from Satellite k
+            inflow = gp.quicksum(y[k, i, j] for i in range(n_customers) if i != j) + y[k, 'S', j]
+            # Outflow: To other customers OR to Satellite k
+            outflow = gp.quicksum(y[k, j, i] for i in range(n_customers) if i != j) + y[k, j, 'S']
+            
+            model.addConstr(inflow == outflow, f"cust_flow_{k}_{j}")
 
     # (6) Satellite capacity: limit number of routes from each satellite
     for k in range(n_satellites):
         model.addConstr(
-            gp.quicksum(y[k, k, j] for j in range(n_customers)) <= satellite_cap,
+            gp.quicksum(y[k, 'S', j] for j in range(n_customers)) <= satellite_cap,
             name=f"satellite_capacity_{k}"
         )
 
     # (7) Total 2nd level vehicles constraint
     model.addConstr(
-        gp.quicksum(y[k, k, j] for k in range(n_satellites) for j in range(n_customers)) <= m2,
+        gp.quicksum(y[k, 'S', j] for k in range(n_satellites) for j in range(n_customers)) <= m2,
         name="total_2nd_vehicles"
     )
 
@@ -294,7 +311,7 @@ def build_2echelon_vrp_model(data):
     for k in range(n_satellites):
         for j in range(n_customers):
             model.addConstr(
-                gp.quicksum(y[k, i, j] for i in range(n_customers) if i != j) + y[k, k, j] <= z[k, j],
+                gp.quicksum(y[k, i, j] for i in range(n_customers) if i != j) + y[k, 'S', j] <= z[k, j],
                 name=f"visit_if_assigned_{k}_{j}"
             )
 
@@ -302,8 +319,8 @@ def build_2echelon_vrp_model(data):
     for k in range(n_satellites):
         for j in range(n_customers):
             model.addConstr(
-                Q2[k, k, j] <= K2 * y[k, k, j],
-                name=f"cap2_{k}_{k}_{j}"
+                Q2[k, 'S', j] <= K2 * y[k, 'S', j],
+                name=f"cap2_{k}_{'S'}_{j}"
             )
         for i in range(n_customers):
             for j in range(n_customers):
@@ -318,8 +335,8 @@ def build_2echelon_vrp_model(data):
     for k in range(n_satellites):
         for j in range(n_customers):
             # Flow in minus flow out equals demand if assigned to this satellite
-            inflow = gp.quicksum(Q2[k, i, j] for i in range(n_customers) if i != j) + Q2[k, k, j]
-            outflow = gp.quicksum(Q2[k, j, i] for i in range(n_customers) if i != j) + Q2[k, j, k]
+            inflow = gp.quicksum(Q2[k, i, j] for i in range(n_customers) if i != j) + Q2[k, 'S', j]
+            outflow = gp.quicksum(Q2[k, j, i] for i in range(n_customers) if i != j) + Q2[k, j, 'S']
 
             model.addConstr(
                 inflow - outflow == demands[j] * z[k, j],
@@ -343,7 +360,7 @@ def build_2echelon_vrp_model(data):
     for k in range(n_satellites):
         sat_idx = k + 1
         model.addConstr(
-            gp.quicksum(y[k, k, j] for j in range(n_customers)) <=
+            gp.quicksum(y[k, 'S', j] for j in range(n_customers)) <=
             satellite_cap * gp.quicksum(x[i, sat_idx] for i in range(n_satellites + 1) if i != sat_idx),
             name=f"link_levels_{k}"
         )
@@ -448,23 +465,25 @@ def visualize_solution(data, x_sol, y_sol, z_sol):
         sat_pos = satellites[k]
         color = route_colors[k % len(route_colors)]
 
-        # Draw routes from this satellite
-        for (sat, i, j), val in y_sol.items():
-            if sat == k and val > 0.5:
-                if i == k:  # From satellite to customer
-                    pos_i = sat_pos
-                    pos_j = customers[j]
-                elif j == k:  # From customer back to satellite
-                    pos_i = customers[i]
-                    pos_j = sat_pos
-                else:  # Customer to customer
-                    pos_i = customers[i]
-                    pos_j = customers[j]
+        # Filter routes for this satellite
+        routes = [(i, j) for (sat, i, j), val in y_sol.items() if sat == k and val > 0.5]
+        
+        for i, j in routes:
+            # Determine start point
+            if i == 'S':
+                p1 = sat_pos
+            else:
+                p1 = customers[i]
+                
+            # Determine end point
+            if j == 'S':
+                p2 = sat_pos
+            else:
+                p2 = customers[j]
 
-                plt.arrow(pos_i[0], pos_i[1],
-                         pos_j[0] - pos_i[0], pos_j[1] - pos_i[1],
-                         head_width=1, head_length=0.8, fc=color, ec=color,
-                         alpha=0.5, linewidth=1.5, length_includes_head=True)
+            plt.arrow(p1[0], p1[1], p2[0] - p1[0], p2[1] - p1[1],
+                     head_width=1, fc=color, ec=color, alpha=0.5, length_includes_head=True)
+
 
     plt.grid(True, alpha=0.3)
     plt.legend(loc='best', fontsize=8)
