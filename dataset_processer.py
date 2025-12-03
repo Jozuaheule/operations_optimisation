@@ -45,9 +45,9 @@ def parse_file(filepath):
 
             # Vehicle capacities
             # 1st level vehicles are larger (e.g., trucks)
-            capacity_1st_level = 150
+            capacity_1st_level = 300
             # 2nd level vehicles are smaller (e.g., vans for city delivery)
-            capacity_2nd_level = 30
+            capacity_2nd_level = 80
 
             # Number of available vehicles
             num_vehicles_1st = 7  # Vehicles at depot
