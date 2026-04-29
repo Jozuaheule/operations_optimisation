@@ -34,9 +34,9 @@ def parse_file(filepath):
 
             if node_type == 'd':
                 depot_coords = [x, y]
-            elif node_type == 's':
+            if node_type == 's':
                 satellite_coords.append([x, y])
-            elif node_type == 'c':
+            if node_type == 'c':
                 customer_coords.append([x, y])
                 customer_demands.append(demand)
 
@@ -45,22 +45,26 @@ def parse_file(filepath):
 
             # Vehicle capacities
             # 1st level vehicles are larger (e.g., trucks)
+            # 10 customers = 35,50,6,5
+            # 15 customers = 50, 80, 7, 11
+
             capacity_1st_level = 300
             # 2nd level vehicles are smaller (e.g., vans for city delivery)
-            capacity_2nd_level = 80
+            capacity_2nd_level = 550
 
             # Number of available vehicles
-            num_vehicles_1st = 7  # Vehicles at depot
-            num_vehicles_2nd = 120  # Total vehicles for 2nd level distribution
+            num_vehicles_1st = 14  # Vehicles at depot
+            num_vehicles_2nd = 60  # Total vehicles for 2nd level distribution
 
             # Satellite capacity (max number of 2nd-level routes from each satellite)
             satellite_capacity = 5  # Each satellite can handle up to 3 delivery routes
+    
     
     return {
         'depot': np.array(depot_coords) if depot_coords is not None else None,
         'satellites': np.array(satellite_coords).reshape(-1, 2) if satellite_coords else np.array([]),
         'customers': np.array(customer_coords).reshape(-1, 2) if customer_coords else np.array([]),
-        'demands': np.array(customer_demands) if customer_demands else np.array([]),
+        'demands': customer_demands,
         'capacity_1st': capacity_1st_level,
         'capacity_2nd': capacity_2nd_level,
         'num_vehicles_1st': num_vehicles_1st,

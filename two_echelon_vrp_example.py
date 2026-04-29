@@ -30,7 +30,7 @@ sample = False
 # Specify folder to use for verification
 folder = "/Users/m.j.j.heule/Documents/4. TU Delft/TU Master/Operations optimisation/operations_optimisation/folder verification"
 dataset = 4   # datasets 2,3 have same structure, dataset 4 is a bit different, dataset 1 works with matrix
-filepath = "/Users/m.j.j.heule/Documents/4. TU Delft/TU Master/Operations optimisation/operations_optimisation/manilakbay-2E-EVRP-Instances-95ae99e/Type_x/Customer_100/R101_21x.txt"
+filepath = "/Users/m.j.j.heule/Documents/4. TU Delft/TU Master/Operations optimisation/operations_optimisation/manilakbay-2E-EVRP-Instances-95ae99e/Type_x/Customer_50/C101_C50x.txt"
 
 
 def create_sample_problem():
@@ -529,8 +529,8 @@ def main():
     # Solve the model
     print("Solving the model...")
     print("-" * 70)
-    model.setParam('TimeLimit', 1000)  # 5 minute time limit
-    model.setParam('MIPGap', 0.05)    # 5% optimality gap tolerance
+    model.setParam('TimeLimit', 10000)  # 5 minute time limit
+    model.setParam('MIPGap', 0.005)    # 5% optimality gap tolerance
     model.optimize()
     print("-" * 70)
     print()
