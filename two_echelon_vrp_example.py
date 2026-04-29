@@ -18,7 +18,7 @@ import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
 import matplotlib.pyplot as plt
-from data_processer import parse_file
+from dataset_processer import parse_file
 
 # ============================================================================
 # PROBLEM DATA SETUP
@@ -30,7 +30,7 @@ sample = False
 # Specify folder to use for verification
 folder = "/Users/m.j.j.heule/Documents/4. TU Delft/TU Master/Operations optimisation/operations_optimisation/folder verification"
 dataset = 4   # datasets 2,3 have same structure, dataset 4 is a bit different, dataset 1 works with matrix
-filepath = "/Users/m.j.j.heule/Documents/4. TU Delft/TU Master/Operations optimisation/operations_optimisation/Dataset2_example.dat"
+filepath = "/Users/m.j.j.heule/Documents/4. TU Delft/TU Master/Operations optimisation/operations_optimisation/manilakbay-2E-EVRP-Instances-95ae99e/Type_x/Customer_50/C101_C50x.txt"
 
 
 def create_sample_problem():
@@ -391,7 +391,7 @@ def visualize_solution(data, x_sol, y_sol, z_sol):
 
     # --- Plot 1st Level (Depot to Satellites) ---
     plt.subplot(1, 2, 1)
-    plt.title("1st Level: Depot → Satellites", fontsize=14, fontweight='bold')
+    plt.title("1st Level: Depot → Satellites", fontsize=12, fontweight='bold')
 
     # Plot depot
     plt.scatter(depot[0], depot[1], c='red', s=300, marker='s',
@@ -421,8 +421,7 @@ def visualize_solution(data, x_sol, y_sol, z_sol):
 
             plt.arrow(pos_i[0], pos_i[1],
                      pos_j[0] - pos_i[0], pos_j[1] - pos_i[1],
-                     head_width=1.5, head_length=1, fc='green', ec='green',
-                     alpha=0.6, linewidth=2, length_includes_head=True)
+                     head_width=0.1, fc='green', ec='green', alpha=0.5, length_includes_head=True)
 
             # Add label showing number of vehicles
             mid_x, mid_y = (pos_i[0] + pos_j[0]) / 2, (pos_i[1] + pos_j[1]) / 2
@@ -530,8 +529,8 @@ def main():
     # Solve the model
     print("Solving the model...")
     print("-" * 70)
-    model.setParam('TimeLimit', 300)  # 5 minute time limit
-    model.setParam('MIPGap', 0.05)    # 5% optimality gap tolerance
+    model.setParam('TimeLimit', 10000)  # 5 minute time limit
+    model.setParam('MIPGap', 0.005)    # 5% optimality gap tolerance
     model.optimize()
     print("-" * 70)
     print()
