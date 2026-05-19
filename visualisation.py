@@ -4,137 +4,214 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 import os
+from dataset_processer import parse_file
 
 def load_data(filename='cleaned_sensitivity_analysis_results.csv'):
     """Loads the sensitivity analysis results from a CSV file."""
     try:
         df = pd.read_csv(filename)
+        df['dataset_name'] = df['dataset'].apply(lambda x: os.path.basename(str(x)))
         return df
     except FileNotFoundError:
         print(f"Error: The file {filename} was not found.")
         return None
 
-def create_demand_capacity_heatmap(df, output_dir='illustrations'):
-    """Creates and saves a heatmap for demand capacity analysis."""
-    print("Generating Demand Capacity Analysis heatmap...")
-    demand_df = df[df['parameter_modified'] == 'demand_capacity_factor'].copy()
-    if demand_df.empty:
-        print("No data available for demand_capacity_factor.")
-        return
+def get_dataset_baselines(df):
+    """Finds the baseline cost for each dataset (multiplier=1.0 or offset=0.0)."""
+    baselines = {}
+    for dataset in df['dataset'].unique():
+        ds_df = df[df['dataset'] == dataset]
+        neutral = ds_df[
+            (ds_df['parameter_value1'].isin([1.0, 0.0])) & 
+            (ds_df['parameter_value2'].fillna(0.0).isin([1.0, 0.0]))
+        ]
+        if not neutral.empty:
+            baselines[dataset] = neutral['total_cost'].mode().iloc[0]
+    return baselines
 
-    demand_df['parameter_value'] = pd.to_numeric(demand_df['parameter_value'], errors='coerce')
-    demand_df.dropna(subset=['parameter_value'], inplace=True)
+def get_baseline_values(df):
+    """Parses datasets to find original parameter values for elasticity calculation."""
+    baselines = {}
+    unique_datasets = df['dataset'].unique()
+    for ds_path in unique_datasets:
+        try:
+            data = parse_file(ds_path)
+            baselines[os.path.basename(ds_path)] = {
+                'vehicle_amount_l1': data['num_vehicles_1st'],
+                'vehicle_amount_l2': data['num_vehicles_2nd'],
+                'satellite_capacity': data['satellite_capacity']
+            }
+        except Exception as e:
+            print(f"Warning: Could not parse baseline for {ds_path}: {e}")
+    return baselines
 
-    table = demand_df.pivot_table(
-        index='dataset',
-        columns='parameter_value',
-        values='total_cost'
-    )
+def create_single_param_heatmap(df, param_name, baseline_costs, title, xlabel, output_name, output_dir='illustrations'):
+    """Creates a heatmap for single-parameter analysis showing % cost change."""
+    print(f"Generating {title} heatmap...")
+    sub_df = df[df['parameter_modified'] == param_name].copy()
+    if sub_df.empty: return
+
+    sub_df['parameter_value1'] = pd.to_numeric(sub_df['parameter_value1'], errors='coerce')
+    sub_df['total_cost'] = pd.to_numeric(sub_df['total_cost'], errors='coerce')
+
+    def calc_pct(row):
+        base = baseline_costs.get(row['dataset'])
+        if base and base > 0 and not np.isinf(row['total_cost']):
+            return (row['total_cost'] - base) / base * 100
+        return np.nan
+
+    sub_df['cost_pct_change'] = sub_df.apply(calc_pct, axis=1)
+    
+    table = sub_df.pivot_table(index='dataset_name', columns='parameter_value1', values='cost_pct_change')
     
     plt.figure(figsize=(12, 8))
-    cmap = plt.get_cmap('viridis_r').copy()
+    cmap = plt.get_cmap('RdYlGn_r').copy()
     cmap.set_bad(color='grey')
-    ax = sns.heatmap(table.replace(np.inf, np.nan), cmap=cmap, annot=False) # Turn off automatic annotation
+    ax = sns.heatmap(table.replace([np.inf, -np.inf], np.nan), cmap=cmap, center=0, annot=True, fmt=".1f", 
+                     annot_kws={"size": 12})
+    if ax.texts:
+        for t in ax.texts: t.set_text(t.get_text() + "%")
     
-    # Manually add annotations
-    for i in range(table.shape[0]):
-        for j in range(table.shape[1]):
-            value = table.iloc[i, j]
-            text = 'inf' if np.isinf(value) else f'{value:.1f}'
-            ax.text(j + 0.5, i + 0.5, text, ha='center', va='center', color='w')
-    plt.title('Demand Capacity Analysis (Total Cost)')
-    plt.xlabel('Demand Capacity Factor')
-    plt.ylabel('Dataset')
-    
-    output_path = os.path.join(output_dir, 'demand_capacity_analysis.png')
-    plt.savefig(output_path, bbox_inches='tight')
+    plt.title(f'{title} (% Cost Change)', fontsize=16)
+    plt.xlabel(xlabel, fontsize=14)
+    plt.ylabel('Dataset Name', fontsize=14)
+    plt.xticks(fontsize=12)
+    plt.yticks(fontsize=12)
+    plt.savefig(os.path.join(output_dir, f'{output_name}.png'), bbox_inches='tight')
     plt.close()
-    print(f"Saved Demand Capacity Analysis heatmap to {output_path}")
 
-def create_combined_heatmaps(df, output_dir='illustrations'):
-    """Creates and saves combined heatmaps for vehicle capacity and amount analysis for each dataset."""
-    
-    vehicle_capacity_df = df[df['parameter_modified'] == 'vehicle_capacity'].copy()
-    vehicle_amount_df = df[df['parameter_modified'] == 'vehicle_amount'].copy()
-
+def create_combined_heatmaps(df, baseline_costs, output_dir='illustrations'):
+    """Creates and saves combined heatmaps for vehicle capacity and amount analysis."""
     datasets = df['dataset'].unique()
-
     for dataset in datasets:
-        print(f"Generating combined heatmap for dataset: {dataset}...")
-        
-        # Prepare data for vehicle capacity
-        cap_df = vehicle_capacity_df[vehicle_capacity_df['dataset'] == dataset].copy()
-        if not cap_df.empty:
-            cap_df['parsed_values'] = cap_df['parameter_value'].apply(ast.literal_eval)
-            cap_df[['layer1', 'layer2']] = pd.DataFrame(cap_df['parsed_values'].tolist(), index=cap_df.index)
-            cap_table = cap_df.pivot_table(index='layer1', columns='layer2', values='total_cost')
-        else:
-            cap_table = pd.DataFrame() # Empty dataframe
+        ds_name = os.path.basename(dataset)
+        ds_all = df[df['dataset'] == dataset]
+        base_cost = baseline_costs.get(dataset)
+        if not base_cost or np.isinf(base_cost): continue
 
-        # Prepare data for vehicle amount
-        amt_df = vehicle_amount_df[vehicle_amount_df['dataset'] == dataset].copy()
-        if not amt_df.empty:
-            amt_df['parsed_values'] = amt_df['parameter_value'].apply(ast.literal_eval)
-            amt_df[['layer1', 'layer2']] = pd.DataFrame(amt_df['parsed_values'].tolist(), index=amt_df.index)
-            amt_table = amt_df.pivot_table(index='layer1', columns='layer2', values='total_cost')
-        else:
-            amt_table = pd.DataFrame() # Empty dataframe
+        def get_2d_table(param_name):
+            sub = ds_all[ds_all['parameter_modified'] == param_name].copy()
+            if sub.empty: return pd.DataFrame()
+            sub['pct_change'] = (sub['total_cost'] - base_cost) / base_cost * 100
+            return sub.pivot_table(index='parameter_value1', columns='parameter_value2', values='pct_change')
 
-        if cap_table.empty and amt_table.empty:
-            print(f"No vehicle capacity or amount data for dataset: {dataset}")
-            continue
+        cap_table = get_2d_table('vehicle_capacity')
+        amt_table = get_2d_table('vehicle_amount')
+
+        if cap_table.empty and amt_table.empty: continue
 
         fig, axes = plt.subplots(1, 2, figsize=(20, 8))
-        fig.suptitle(f'Vehicle Analysis for Dataset: {dataset}', fontsize=16)
+        fig.suptitle(f'Vehicle Analysis for {ds_name} (% Cost Change)', fontsize=16)
+        cmap = plt.get_cmap('RdYlGn_r').copy()
+        cmap.set_bad(color='grey')
 
-        if not cap_table.empty:
-            cmap = plt.get_cmap('viridis_r').copy()
-            cmap.set_bad(color='grey')
-            sns.heatmap(cap_table.replace(np.inf, np.nan), cmap=cmap, annot=False, ax=axes[0])
-            for i in range(cap_table.shape[0]):
-                for j in range(cap_table.shape[1]):
-                    value = cap_table.iloc[i, j]
-                    text = 'inf' if np.isinf(value) else f'{value:.1f}'
-                    axes[0].text(j + 0.5, i + 0.5, text, ha='center', va='center', color='w')
-            axes[0].set_title('Vehicle Capacity Analysis')
-            axes[0].set_xlabel('Layer 2 Capacity Multiplier')
-            axes[0].set_ylabel('Layer 1 Capacity Multiplier')
-        else:
-            axes[0].text(0.5, 0.5, 'No Data', ha='center', va='center')
-            axes[0].set_title('Vehicle Capacity Analysis')
-
-
-        if not amt_table.empty:
-            cmap = plt.get_cmap('viridis_r').copy()
-            cmap.set_bad(color='grey')
-            sns.heatmap(amt_table.replace(np.inf, np.nan), cmap=cmap, annot=False, ax=axes[1])
-            for i in range(amt_table.shape[0]):
-                for j in range(amt_table.shape[1]):
-                    value = amt_table.iloc[i, j]
-                    text = 'inf' if np.isinf(value) else f'{value:.1f}'
-                    axes[1].text(j + 0.5, i + 0.5, text, ha='center', va='center', color='w')
-            axes[1].set_title('Vehicle Amount Analysis')
-            axes[1].set_xlabel('Layer 2 Amount Multiplier')
-            axes[1].set_ylabel('Layer 1 Amount Multiplier')
-        else:
-            axes[1].text(0.5, 0.5, 'No Data', ha='center', va='center')
-            axes[1].set_title('Vehicle Amount Analysis')
-
-        output_path = os.path.join(output_dir, f'vehicle_analysis_{dataset}.png')
-        plt.savefig(output_path, bbox_inches='tight')
+        for i, (table, title, xl, yl) in enumerate([
+            (cap_table, 'Vehicle Capacity Analysis (Multipliers)', 'L2 Capacity Multiplier', 'L1 Capacity Multiplier'),
+            (amt_table, 'Vehicle Amount Analysis (Offsets)', 'L2 Amount Offset', 'L1 Amount Offset')
+        ]):
+            if not table.empty:
+                sns.heatmap(table.replace([np.inf, -np.inf], np.nan), cmap=cmap, center=0, annot=True, fmt=".1f", ax=axes[i],
+                            annot_kws={"size": 12})
+                if axes[i].texts:
+                    for t in axes[i].texts: t.set_text(t.get_text() + "%")
+                axes[i].set_title(title, fontsize=14)
+                axes[i].set_xlabel(xl, fontsize=12)
+                axes[i].set_ylabel(yl, fontsize=12)
+                axes[i].tick_params(axis='both', which='major', labelsize=10)
+            else:
+                axes[i].text(0.5, 0.5, 'No Data', ha='center', va='center', fontsize=14)
+        plt.savefig(os.path.join(output_dir, f'vehicle_analysis_{ds_name}.png'), bbox_inches='tight')
         plt.close()
-        print(f"Saved combined heatmap for {dataset} to {output_path}")
+
+def create_elasticity_analysis(df, output_dir='illustrations'):
+    """Calculates and plots the elasticity of each parameter."""
+    print("Generating Elasticity Analysis...")
+    baselines_info = get_baseline_values(df)
+    elasticity_results = []
+
+    for dataset in df['dataset'].unique():
+        ds_name = os.path.basename(dataset)
+        ds_df = df[df['dataset'] == dataset].copy()
+        ds_info = baselines_info.get(ds_name)
+        if not ds_info: continue
+
+        for param in ds_df['parameter_modified'].unique():
+            param_df = ds_df[ds_df['parameter_modified'] == param].copy()
+            neutral = param_df[
+                (param_df['parameter_value1'].isin([1.0, 0.0])) & 
+                (param_df['parameter_value2'].fillna(0.0).isin([1.0, 0.0]))
+            ]
+            if neutral.empty: continue
+            cost0 = neutral.iloc[0]['total_cost']
+            if np.isinf(cost0) or cost0 <= 0: continue
+
+            for _, row in param_df.iterrows():
+                cost = row['total_cost']
+                v1, v2 = row['parameter_value1'], row.get('parameter_value2', 0)
+                
+                # Identify if this IS the neutral row (skip it for calculation)
+                if param in ['vehicle_capacity', 'demand_capacity_factor']:
+                    if v1 == 1.0 and (np.isnan(v2) or v2 == 1.0 or v2 == 0): is_neutral = True
+                    else: is_neutral = False
+                else:
+                    if v1 == 0.0 and (np.isnan(v2) or v2 == 0.0): is_neutral = True
+                    else: is_neutral = False
+                
+                if is_neutral: continue
+                
+                # Calculate Delta Cost (handle infeasible as a large penalty or skip)
+                if np.isinf(cost): 
+                    continue # Infeasible doesn't give a good elasticity number
+                
+                pct_delta_cost = (cost - cost0) / cost0
+                
+                # Calculate Delta Param
+                if param in ['vehicle_capacity', 'demand_capacity_factor']:
+                    d1 = abs(v1 - 1.0)
+                    d2 = abs(v2 - 1.0) if (not np.isnan(v2) and v2 != 0) else 0
+                    pct_delta_param = max(d1, d2)
+                else:
+                    if param == 'satellite_capacity': denom = ds_info['satellite_capacity']
+                    elif param == 'vehicle_amount': denom = (ds_info['vehicle_amount_l1'] + ds_info['vehicle_amount_l2']) / 2
+                    else: denom = 1
+                    
+                    d1 = abs(v1) / denom if denom != 0 else 0
+                    d2 = abs(v2) / denom if (not np.isnan(v2) and v2 != 0) else 0
+                    pct_delta_param = max(d1, d2)
+
+                if pct_delta_param > 0:
+                    elasticity_results.append({
+                        'Parameter': param,
+                        'Dataset': ds_name,
+                        'Elasticity': abs(pct_delta_cost / pct_delta_param)
+                    })
+
+    if not elasticity_results: return
+    elast_df = pd.DataFrame(elasticity_results)
+    avg_elast = elast_df.groupby('Parameter')['Elasticity'].mean().sort_values(ascending=False).reset_index()
+    
+    plt.figure(figsize=(10, 6))
+    sns.barplot(data=avg_elast, x='Elasticity', y='Parameter', palette='viridis', hue='Parameter', legend=False)
+    plt.axvline(x=1.0, color='red', linestyle='--', label='Unit Elasticity (1.0)')
+    plt.title('Parameter Sensitivity Ranking (Elasticity)', fontsize=16)
+    plt.xlabel('Elasticity (|% ΔCost / % ΔParam|)', fontsize=14)
+    plt.ylabel('Parameter', fontsize=14)
+    plt.xticks(fontsize=12)
+    plt.yticks(fontsize=12)
+    plt.grid(axis='x', alpha=0.3)
+    plt.savefig(os.path.join(output_dir, 'parameter_elasticity_ranking.png'), bbox_inches='tight')
+    plt.close()
 
 def main():
-    """Main function to generate and display tables."""
     output_dir = 'illustrations'
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
+    if not os.path.exists(output_dir): os.makedirs(output_dir)
     df = load_data()
     if df is not None:
-        create_demand_capacity_heatmap(df, output_dir)
-        create_combined_heatmaps(df, output_dir)
+        baseline_costs = get_dataset_baselines(df)
+        create_single_param_heatmap(df, 'demand_capacity_factor', baseline_costs, 'Demand Capacity', 'Multiplier', 'demand_capacity_analysis')
+        create_single_param_heatmap(df, 'satellite_capacity', baseline_costs, 'Satellite Capacity', 'Offset', 'satellite_capacity_analysis')
+        create_combined_heatmaps(df, baseline_costs, output_dir)
+        create_elasticity_analysis(df, output_dir)
 
 if __name__ == "__main__":
     main()

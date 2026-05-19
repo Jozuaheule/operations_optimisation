@@ -48,16 +48,16 @@ def parse_file(filepath):
             # 10 customers = 35,50,6,5
             # 15 customers = 50, 80, 7, 11
 
-            capacity_1st_level = 300
+            capacity_1st_level = 500
             # 2nd level vehicles are smaller (e.g., vans for city delivery)
-            capacity_2nd_level = 550
+            capacity_2nd_level = 600
 
             # Number of available vehicles
-            num_vehicles_1st = 14  # Vehicles at depot
-            num_vehicles_2nd = 60  # Total vehicles for 2nd level distribution
+            num_vehicles_1st = 20  # Vehicles at depot
+            num_vehicles_2nd = 70  # Total vehicles for 2nd level distribution
 
             # Satellite capacity (max number of 2nd-level routes from each satellite)
-            satellite_capacity = 5  # Each satellite can handle up to 3 delivery routes
+            satellite_capacity = 10  # Each satellite can handle up to 3 delivery routes
     
     
     return {

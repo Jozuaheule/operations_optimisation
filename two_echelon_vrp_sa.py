@@ -44,11 +44,19 @@ def load_problem_data(filepath, type, level1, level2):
 
     if type == 'vehicle_amount':
     
-        # Apply capacity multiplier for sensitivity analysis
+        # Apply TIGHT BASELINE (e.g., 25% of original) then add DISCRETE OFFSET
         if 'num_vehicles_1st' in data:
-            data['num_vehicles_1st'] = np.round(np.array(data['num_vehicles_1st']) * level1).astype(int)
+            tight_base_1st = max(1, int(np.round(data['num_vehicles_1st'] * 0.25)))
+            data['num_vehicles_1st'] = max(1, int(tight_base_1st + level1))
         if 'num_vehicles_2nd' in data:
-            data['num_vehicles_2nd'] = np.round(np.array(data['num_vehicles_2nd']) * level2).astype(int)
+            tight_base_2nd = max(1, int(np.round(data['num_vehicles_2nd'] * 0.25)))
+            data['num_vehicles_2nd'] = max(1, int(tight_base_2nd + level2))
+    
+    if type == 'satellite_capacity':
+        # Apply DISCRETE OFFSET to the satellite route capacity
+        if 'satellite_capacity' in data:
+            data['satellite_capacity'] = max(1, int(data['satellite_capacity'] + level1))
+            
     return data
 
 # ============================================================================
